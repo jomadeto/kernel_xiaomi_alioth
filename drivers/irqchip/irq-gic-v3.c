@@ -35,6 +35,8 @@
 #include <linux/irqchip/arm-gic-common.h>
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/irqchip/irq-partition-percpu.h>
+#include <linux/wakeup_reason.h>
+#include <linux/syscore_ops.h>
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
@@ -422,6 +424,38 @@ static int __init gic_init_sys(void)
 arch_initcall(gic_init_sys);
 
 #endif
+
+static bool gic_check_wakeup_event(void *data)
+{
+	unsigned int i;
+	u32 enabled;
+	bool ret=false;
+	u32 pending[32];
+	void __iomem *base = gic_data.dist_base;
+
+	for (i = 0; i * 32 < gic_data.irq_nr; i++) {
+		enabled = readl_relaxed(base + GICD_ICENABLER + i * 4);
+		pending[i] = readl_relaxed(base + GICD_ISPENDR + i * 4);
+		pending[i] &= enabled;
+	}
+
+	for (i = find_first_bit((unsigned long *)pending, gic_data.irq_nr);
+	     i < gic_data.irq_nr;
+	     i = find_next_bit((unsigned long *)pending, gic_data.irq_nr, i+1)) {
+		unsigned int irq = irq_find_mapping(gic_data.domain, i);
+		struct irq_desc *desc = irq_to_desc(irq);
+		const char *name = "null";
+
+		if (desc == NULL)
+			name = "stray irq";
+		else if (desc->action && desc->action->name)
+			name = desc->action->name;
+		ret = true;
+		log_irq_wakeup_reason(irq);
+	}
+
+	return ret;
+}
 
 static u64 gic_mpidr_to_affinity(unsigned long mpidr)
 {
@@ -826,7 +860,6 @@ static void gic_send_sgi(u64 cluster_id, u16 tlist, unsigned int irq)
 	       MPIDR_TO_SGI_RS(cluster_id)		|
 	       tlist << ICC_SGI1R_TARGET_LIST_SHIFT);
 
-	pr_devel("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
 	gic_write_sgi1r(val);
 }
 

@@ -1226,7 +1226,6 @@ retry_flush_dents:
 		cond_resched();
 		goto retry_flush_quotas;
 	}
-
 retry_flush_nodes:
 	down_write(&sbi->node_write);
 

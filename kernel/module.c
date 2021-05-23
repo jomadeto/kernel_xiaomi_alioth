@@ -65,6 +65,26 @@
 #include <linux/dynamic_debug.h>
 #include <linux/audit.h>
 #include <uapi/linux/module.h>
+
+#ifndef CONFIG_MODULES
+SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
+		unsigned int, flags)
+{
+	return 0;
+}
+
+SYSCALL_DEFINE3(init_module, void __user *, umod,
+		unsigned long, len, const char __user *, uargs)
+{
+	return 0;
+}
+
+SYSCALL_DEFINE3(finit_module, int, fd, const char __user *, uargs, int, flags)
+{
+	return 0;
+}
+#else
+
 #include "module-internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -3107,6 +3127,7 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 		modmagic = NULL;
 
 	/* This is allowed: modprobe --force will invalidate it. */
+#if 0
 	if (!modmagic) {
 		err = try_to_force_load(mod, "bad vermagic");
 		if (err)
@@ -3116,7 +3137,7 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 		       info->name, modmagic, vermagic);
 		return -ENOEXEC;
 	}
-
+#endif
 	if (!get_modinfo(info, "intree")) {
 		if (!test_taint(TAINT_OOT_MODULE))
 			pr_warn("%s: loading out-of-tree module taints kernel.\n",
@@ -4518,3 +4539,5 @@ void module_layout(struct module *mod,
 }
 EXPORT_SYMBOL(module_layout);
 #endif
+
+#endif // CONFIG_MODULES

@@ -667,9 +667,14 @@ unsigned int cpuinfo_max_freq_cached;
 
 static bool should_use_cached_freq(int cpu)
 {
+	/* This is a safe check. may not be needed */
 	if (!cpuinfo_max_freq_cached)
 		return false;
 
+	/*
+	 * perfd already configure sched_lib_mask_force to
+	 * 0xf0 from user space. so re-using it.
+	 */
 	if (!(BIT(cpu) & sched_lib_mask_force))
 		return false;
 
@@ -2268,7 +2273,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 	/* adjust if necessary - hardware incompatibility */
 	blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
-			CPUFREQ_INCOMPATIBLE, new_policy);
+			CPUFREQ_THERMAL, new_policy);
 
 	/*
 	 * verify the cpu speed can be set within this limit, which might be

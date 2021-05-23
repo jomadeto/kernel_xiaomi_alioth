@@ -4183,7 +4183,6 @@ static int fastrpc_internal_control(struct fastrpc_file *fl,
 {
 	int err = 0;
 	unsigned int latency;
-	cpumask_t mask;
 	struct fastrpc_apps *me = &gfa;
 	u32 len = me->silvercores.corecount, i = 0;
 
@@ -4201,11 +4200,11 @@ static int fastrpc_internal_control(struct fastrpc_file *fl,
 		VERIFY(err, latency != 0);
 		if (err)
 			goto bail;
-		cpumask_clear(&mask);
+		atomic_set(&fl->pm_qos_req.cpus_affine, 0);
 		for (i = 0; i < len; i++)
-			cpumask_set_cpu(me->silvercores.coreno[i], &mask);
+			atomic_or(BIT(me->silvercores.coreno[i]),
+				  &fl->pm_qos_req.cpus_affine);
 		fl->pm_qos_req.type = PM_QOS_REQ_AFFINE_CORES;
-		cpumask_copy(&fl->pm_qos_req.cpus_affine, &mask);
 
 		if (!fl->qos_request) {
 			pm_qos_add_request(&fl->pm_qos_req,
@@ -5216,8 +5215,10 @@ static int __init fastrpc_device_init(void)
 
 	debugfs_root = debugfs_create_dir("adsprpc", NULL);
 	if (IS_ERR_OR_NULL(debugfs_root)) {
+#ifdef CONFIG_DEBUG_FS
 		pr_warn("Error: %s: %s: failed to create debugfs root dir\n",
 			current->comm, __func__);
+#endif
 		debugfs_remove_recursive(debugfs_root);
 		debugfs_root = NULL;
 	}

@@ -890,32 +890,74 @@ int fg_get_msoc_raw(struct fg_dev *fg, int *val)
 		return -EINVAL;
 	}
 
-	fg_dbg(fg, FG_POWER_SUPPLY, "raw: 0x%02x\n", cap[0]);
+//	fg_dbg(fg, FG_POWER_SUPPLY, "raw: 0x%02x\n", cap[0]);
 	*val = cap[0];
 	return 0;
 }
 
+static bool optimized_soc_flag;
 int fg_get_msoc(struct fg_dev *fg, int *msoc)
 {
 	int rc;
+	int raw_msoc;
 
 	rc = fg_get_msoc_raw(fg, msoc);
 	if (rc < 0)
 		return rc;
 
-	/*
-	 * To have better endpoints for 0 and 100, it is good to tune the
-	 * calculation discarding values 0 and 255 while rounding off. Rest
-	 * of the values 1-254 will be scaled to 1-99. DIV_ROUND_UP will not
-	 * be suitable here as it rounds up any value higher than 252 to 100.
-	 */
-	if (*msoc == FULL_SOC_RAW)
-		*msoc = 100;
-	else if (*msoc == 0)
-		*msoc = 0;
-	else
-		*msoc = DIV_ROUND_CLOSEST((*msoc - 1) * (FULL_CAPACITY - 2),
-				FULL_SOC_RAW - 2) + 1;
+	rc = fg_get_msoc_raw(fg, &raw_msoc);
+	if (rc < 0)
+		return rc;
+
+	if (fg->param.smooth_batt_flag) {
+//		pr_info("===raw_msoc:%d\n", raw_msoc);
+
+		if (raw_msoc >= 255) {
+			*msoc = FULL_CAPACITY;
+		} else if (raw_msoc >= 252 && !optimized_soc_flag && fg->report_full) {
+			*msoc = FULL_CAPACITY;
+			optimized_soc_flag = true;
+		} else if (raw_msoc >= 252 && !optimized_soc_flag && !fg->report_full) {
+			*msoc = FULL_CAPACITY - 1;
+		} else if (raw_msoc >= 245 && !optimized_soc_flag) {
+			*msoc = FULL_CAPACITY - 1;
+		} else if (raw_msoc >= 245 && optimized_soc_flag){
+			*msoc = FULL_CAPACITY;
+		} else if (raw_msoc > 19) {
+			*msoc = DIV_ROUND_CLOSEST(raw_msoc * FULL_CAPACITY, FULL_SOC_RAW) + 3;
+		} else if (raw_msoc > 0) {
+			*msoc = raw_msoc / 2 + 1;
+		} else if (raw_msoc == 0) {
+			*msoc = 0;
+		} else {
+			*msoc = 0;
+		}
+
+		if (raw_msoc < 245)
+			optimized_soc_flag = false;
+	} else {
+		/*
+		 * To have better endpoints for 0 and 100, it is good to tune the
+		 * calculation discarding values 0 and 255 while rounding off. Rest
+		 * of the values 1-254 will be scaled to 1-99. DIV_ROUND_UP will not
+		 * be suitable here as it rounds up any value higher than 252 to 100.
+		 */
+		if ((*msoc >= FULL_SOC_REPORT_THR - 2)
+					&& (*msoc < FULL_SOC_RAW) && fg->report_full) {
+			*msoc = DIV_ROUND_CLOSEST(*msoc * FULL_CAPACITY, FULL_SOC_RAW) + 1;
+			if (*msoc >= FULL_CAPACITY)
+				*msoc = FULL_CAPACITY;
+		} else if (*msoc == FULL_SOC_RAW)
+			*msoc = 100;
+		else if (*msoc == 0)
+			*msoc = 0;
+		else if (*msoc >= FULL_SOC_REPORT_THR - 4 && *msoc <= FULL_SOC_REPORT_THR - 3 && fg->report_full)
+			*msoc = DIV_ROUND_CLOSEST(*msoc * FULL_CAPACITY, FULL_SOC_RAW);
+		else
+			*msoc = DIV_ROUND_CLOSEST((*msoc - 1) * (FULL_CAPACITY - 2),
+					FULL_SOC_RAW - 2) + 1;
+	}
+
 	return 0;
 }
 
@@ -1649,9 +1691,9 @@ int fg_debugfs_create(struct fg_dev *fg)
 	fg->dfs_root = debugfs_create_dir("fg", NULL);
 	if (IS_ERR_OR_NULL(fg->dfs_root)) {
 		if (PTR_ERR(fg->dfs_root) == -ENODEV)
-			pr_err("debugfs is not enabled in the kernel\n");
+			pr_debug("debugfs is not enabled in the kernel\n");
 		else
-			pr_err("error creating fg dfs root rc=%ld\n",
+			pr_debug("error creating fg dfs root rc=%ld\n",
 			       (long)fg->dfs_root);
 		return -ENODEV;
 	}
@@ -1659,20 +1701,20 @@ int fg_debugfs_create(struct fg_dev *fg)
 	file = debugfs_create_u32("debug_mask", 0600, fg->dfs_root,
 			fg->debug_mask);
 	if (IS_ERR_OR_NULL(file)) {
-		pr_err("failed to create debug_mask\n");
+		pr_debug("failed to create debug_mask\n");
 		goto err_remove_fs;
 	}
 
 	rc = fg_sram_debugfs_create(fg);
 	if (rc < 0) {
-		pr_err("failed to create sram dfs rc=%d\n", rc);
+		pr_debug("failed to create sram dfs rc=%d\n", rc);
 		goto err_remove_fs;
 	}
 
 	if (fg->alg_flags) {
 		if (!debugfs_create_file("alg_flags", 0400, fg->dfs_root, fg,
 					 &fg_alg_flags_fops)) {
-			pr_err("failed to create alg_flags file\n");
+			pr_debug("failed to create alg_flags file\n");
 			goto err_remove_fs;
 		}
 	}

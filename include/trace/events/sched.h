@@ -32,6 +32,25 @@ TRACE_EVENT(sched_kthread_stop,
 	TP_printk("comm=%s pid=%d", __entry->comm, __entry->pid)
 );
 
+TRACE_EVENT(sched_setaffinity,
+
+	TP_PROTO(pid_t pid, const struct cpumask *in_mask),
+
+	TP_ARGS(pid, in_mask),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(unsigned long, cpu_mask)
+	),
+
+	TP_fast_assign(
+		__entry->pid	     = pid;
+		__entry->cpu_mask  = cpumask_bits(in_mask)[0];
+	),
+
+	TP_printk(" pid=%d affine=%#lx", __entry->pid, __entry->cpu_mask)
+);
+
 /*
  * Tracepoint for the return value of the kthread stopping:
  */
@@ -1598,6 +1617,28 @@ TRACE_EVENT_CONDITION(sched_overutilized,
 		__entry->overutilized ? 1 : 0, __entry->cpulist)
 );
 
+TRACE_EVENT(sched_capacity_update,
+
+	TP_PROTO(int cpu),
+
+	TP_ARGS(cpu),
+
+	TP_STRUCT__entry(
+		__field(unsigned int, cpu)
+		__field(unsigned int, capacity)
+		__field(unsigned int, capacity_orig)
+	),
+
+	TP_fast_assign(
+		__entry->cpu			= cpu;
+		__entry->capacity		= capacity_of(cpu);
+		__entry->capacity_orig		= capacity_orig_of(cpu);
+	),
+
+	TP_printk("cpu=%d capacity=%u capacity_orig=%u",
+		__entry->cpu, __entry->capacity, __entry->capacity_orig)
+);
+
 /*
  * Tracepoint for sched_get_nr_running_avg
  */
@@ -1663,6 +1704,26 @@ TRACE_EVENT(sched_isolate,
 		__entry->requested_cpu, __entry->isolated_cpus,
 		__entry->time, __entry->isolate)
 );
+
+#ifndef CONFIG_SCHED_WALT
+
+TRACE_EVENT(sched_set_boost,
+
+	TP_PROTO(int type),
+
+	TP_ARGS(type),
+
+	TP_STRUCT__entry(
+		__field(int, type			)
+	),
+
+	TP_fast_assign(
+		__entry->type = type;
+	),
+
+	TP_printk("type %d", __entry->type)
+);
+#endif /*CONFIG_SCHED_WALT*/
 
 #include "walt.h"
 #endif /* CONFIG_SMP */
