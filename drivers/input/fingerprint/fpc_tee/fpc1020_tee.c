@@ -684,6 +684,7 @@ static ssize_t wakeup_enable_set(struct device *dev,
 	else
 		ret = -EINVAL;
 */
+	// Yeah fingerprint dies if i don't lock like wtf?
 	mutex_unlock(&fpc1020->lock);
 
 	return ret;
@@ -754,6 +755,7 @@ static ssize_t irq_ack(struct device *dev,
 	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
 
 	dev_dbg(fpc1020->dev, "%s\n", __func__);
+	dev_info(fpc1020->dev, "%s -> %s\n", __func__, buf);
 
 	return count;
 }
@@ -774,6 +776,7 @@ static ssize_t fingerdown_wait_set(struct device *dev,
 		fpc1020->wait_finger_down = false;
 	else
 		return -EINVAL;
+	dev_dbg(fpc1020->dev, "%s\n", __func__);
 
 	return count;
 }
@@ -853,10 +856,12 @@ static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 	dev_dbg(fpc1020->dev, "%s\n", __func__);
 
 	mutex_lock(&fpc1020->lock);
+
 	if (atomic_read(&fpc1020->wakeup_enabled)) {
 		fpc1020->nbr_irqs_received++;
-		__pm_wakeup_event(fpc1020->ttw_wl, FPC_TTW_HOLD_TIME);
+		__pm_wakeup_event(fpc1020->ttw_wl, (FPC_TTW_HOLD_TIME));
 	}
+
 	mutex_unlock(&fpc1020->lock);
 
 	sysfs_notify(&fpc1020->dev->kobj, NULL, dev_attr_irq.attr.name);
@@ -943,7 +948,6 @@ static int fpc1020_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int rc = 0;
 	size_t i;
-
 	struct device_node *np = dev->of_node;
 	struct fpc1020_data *fpc1020 = devm_kzalloc(dev, sizeof(*fpc1020),
 						    GFP_KERNEL);
@@ -1005,8 +1009,8 @@ static int fpc1020_probe(struct platform_device *pdev)
 		device_init_wakeup(dev, 1);
 	}
 */
-	mutex_init(&fpc1020->lock);
 
+	mutex_init(&fpc1020->lock);
 	fpc1020->ttw_wl = wakeup_source_register(dev, "fpc_ttw_wl");
 	if (!fpc1020->ttw_wl)
 		return -ENOMEM;
@@ -1115,4 +1119,4 @@ module_exit(fpc1020_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Aleksej Makarov");
 MODULE_AUTHOR("Henrik Tillman <henrik.tillman@fingerprints.com>");
-MODULE_DESCRIPTION("FPC1020 Fingerprint sensor device driver."); 
+MODULE_DESCRIPTION("FPC1020 Fingerprint sensor device driver.");
